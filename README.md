@@ -16,15 +16,21 @@
 
 1. [공공데이터포털](https://www.data.go.kr)에서 "기상청_지진정보 조회서비스"를 신청해
    서비스키(Decoding 키)를 발급받습니다. (승인까지 시간이 걸릴 수 있습니다)
-2. 실행:
+2. 실행 (macOS/Linux/Git Bash):
    ```bash
-   KMA_SERVICE_KEY=발급받은키 node fetch-quakes.mjs 30
+   KMA_SERVICE_KEY=발급받은키 node fetch-quakes.mjs 3
    ```
-   (마지막 인자는 조회할 최근 일수, 기본 30일)
+   Windows PowerShell:
+   ```powershell
+   $env:KMA_SERVICE_KEY='발급받은키'
+   node fetch-quakes.mjs 3
+   ```
+   (마지막 인자는 조회할 최근 일수. 이 API는 **최대 3일**까지만 조회 가능해 자동으로 3일로 제한됩니다)
 3. 생성된 `map.html`을 브라우저로 엽니다.
 
 ## 알려진 한계 (프로토타입 단계)
 
+- 조회 기간은 오늘 기준 최대 3일까지만 허용됩니다 (API 자체 제약, resultCode 99로 확인됨).
 - 이 API의 정확한 응답 필드명(위도/경도/규모 등)을 공식 문서에서 확인하지 못했습니다
   (이 개발 환경의 네트워크 정책상 data.go.kr 접근이 차단되어 있음). `fetch-quakes.mjs`
   상단의 `FIELD_CANDIDATES`에 후보 필드명을 넣어뒀고, 매칭에 실패한 항목은 콘솔에

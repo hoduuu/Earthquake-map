@@ -7,17 +7,25 @@
 // 서비스키는 공공데이터포털(data.go.kr)에서 "기상청_지진정보 조회서비스"를
 // 신청하면 발급된다 (승인까지 시간이 걸릴 수 있음). "Decoding" 키를 사용할 것.
 //
+// 이 API는 조회 기간을 최대 3일(오늘 기준)까지만 허용한다 (실측 확인, resultCode 99).
+//
 // 주의: 이 API의 공식 응답 필드 문서를 이 환경의 네트워크 정책(egress 차단)으로
 // 확인하지 못했다. 아래 FIELD_CANDIDATES는 데이터고 API 공통 스펙과 관련 자료를
 // 바탕으로 한 추정치이며, 실제 응답 필드명이 다르면 콘솔 경고에 찍히는 원본 item을
 // 보고 이 배열을 수정하면 된다.
 
 const SERVICE_KEY = process.env.KMA_SERVICE_KEY;
-const DAYS = Number(process.argv[2] ?? 30);
+const MAX_DAYS = 3;
+const requestedDays = Number(process.argv[2] ?? MAX_DAYS);
+const DAYS = Math.min(requestedDays, MAX_DAYS);
 
 if (!SERVICE_KEY) {
   console.error("환경변수 KMA_SERVICE_KEY가 필요합니다. (data.go.kr에서 발급받은 Decoding 키)");
   process.exit(1);
+}
+
+if (requestedDays > MAX_DAYS) {
+  console.warn(`이 API는 최대 ${MAX_DAYS}일까지만 조회 가능해 ${MAX_DAYS}일로 조정합니다.`);
 }
 
 const FIELD_CANDIDATES = {
