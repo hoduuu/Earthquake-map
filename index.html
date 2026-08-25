@@ -38,8 +38,17 @@
   .panel button { margin-top: 6px; }
   .scope-row { margin-top: 6px; }
   #countryPicker { margin-top: 6px; }
-  #countrySelect { width: 100%; }
+  .country-list {
+    max-height: 140px; overflow-y: auto; border: 1px solid var(--border);
+    border-radius: 4px; padding: 4px 8px;
+  }
+  .country-list label { display: block; margin: 2px 0; font-weight: normal; }
   #status { margin-top: 6px; color: var(--text); opacity: 0.75; }
+  .timeline-panel { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 6px; }
+  #timelineSlider { width: 100%; }
+  .timeline-controls { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+  .timeline-controls select { flex: 0 0 auto; }
+  #timelineDate { font-size: 12px; opacity: 0.75; }
   .spinner {
     display: inline-block; width: 12px; height: 12px;
     border: 2px solid var(--border); border-top-color: var(--accent);
@@ -78,7 +87,7 @@
     <label><input type="radio" name="scope" value="countries"> 나라 선택 (복수 가능)</label>
   </div>
   <div id="countryPicker" style="display:none;">
-    <select id="countrySelect" multiple size="6"></select>
+    <div id="countryList" class="country-list"></div>
   </div>
 
   <div class="scope-row">
@@ -88,6 +97,21 @@
   <button id="reload">다시 조회</button>
   <button id="copyLink">링크 복사</button>
   <div id="status">불러오는 중...</div>
+
+  <div class="timeline-panel">
+    <div class="chart-title">타임라인 재생</div>
+    <input id="timelineSlider" type="range" min="0" max="1000" value="1000">
+    <div class="timeline-controls">
+      <button id="playBtn">재생</button>
+      <select id="speedSelect">
+        <option value="1">1x</option>
+        <option value="5" selected>5x</option>
+        <option value="20">20x</option>
+        <option value="50">50x</option>
+      </select>
+      <span id="timelineDate"></span>
+    </div>
+  </div>
 
   <div class="chart-panel">
     <div class="chart-title">연도별 발생 건수</div>
@@ -155,7 +179,7 @@
   map.addLayer(markerLayer);
 
   const statusEl = document.getElementById('status');
-  const countrySelect = document.getElementById('countrySelect');
+  const countryList = document.getElementById('countryList');
   const countryPicker = document.getElementById('countryPicker');
   const fromYearInput = document.getElementById('fromYear');
   const toYearInput = document.getElementById('toYear');
@@ -163,12 +187,26 @@
   const darkToggle = document.getElementById('darkToggle');
   const copyLinkBtn = document.getElementById('copyLink');
   const yearChartEl = document.getElementById('yearChart');
+  const timelineSlider = document.getElementById('timelineSlider');
+  const playBtn = document.getElementById('playBtn');
+  const speedSelect = document.getElementById('speedSelect');
+  const timelineDateEl = document.getElementById('timelineDate');
 
+  const countryCheckboxes = {};
   for (const name of Object.keys(COUNTRIES)) {
-    const opt = document.createElement('option');
-    opt.value = name;
-    opt.textContent = name;
-    countrySelect.appendChild(opt);
+    const label = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = name;
+    cb.addEventListener('change', loadQuakes);
+    countryCheckboxes[name] = cb;
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(' ' + name));
+    countryList.appendChild(label);
+  }
+
+  function getSelectedCountries() {
+    return Object.keys(countryCheckboxes).filter((name) => countryCheckboxes[name].checked);
   }
 
   function colorFor(mag) {
@@ -185,6 +223,16 @@
       html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};opacity:0.75;border:1px solid rgba(0,0,0,0.35)"></div>`,
       iconSize: [size, size],
     });
+  }
+
+  function addMarkerForFeature(f) {
+    const [lon, lat] = f.geometry.coordinates;
+    const mag = f.properties.mag ?? 0;
+    const place = f.properties.place ?? '';
+    const time = new Date(f.properties.time).toLocaleString('ko-KR');
+    L.marker([lat, lon], { icon: quakeIcon(mag) })
+      .bindPopup(`<b>${place}</b><br>규모: ${mag}<br>${time}`)
+      .addTo(markerLayer);
   }
 
   function currentScope() {
@@ -265,7 +313,7 @@
         features = await fetchBBox(COUNTRIES['대한민국'], fromYear, toYear, minMag);
         scopeLabel = '한국 인근';
       } else {
-        selectedCountries = Array.from(countrySelect.selectedOptions).map((o) => o.value);
+        selectedCountries = getSelectedCountries();
         if (selectedCountries.length === 0) {
           statusEl.textContent = '나라를 하나 이상 선택하세요.';
           markerLayer.clearLayers();
@@ -288,25 +336,75 @@
       }
 
       markerLayer.clearLayers();
-      for (const f of features) {
-        const [lon, lat] = f.geometry.coordinates;
-        const mag = f.properties.mag ?? 0;
-        const place = f.properties.place ?? '';
-        const time = new Date(f.properties.time).toLocaleString('ko-KR');
-        L.marker([lat, lon], { icon: quakeIcon(mag) })
-          .bindPopup(`<b>${place}</b><br>규모: ${mag}<br>${time}`)
-          .addTo(markerLayer);
-      }
+      for (const f of features) addMarkerForFeature(f);
       statusEl.textContent = `${features.length}건 (USGS, ${scopeLabel}, ${fromYear}~${toYear}년, 규모 ${minMag} 이상)`;
       renderYearChart(features);
       updateUrl({ fromYear, toYear, minMag, scope, countries: selectedCountries });
+
+      stopPlaying();
+      lastFeatures = features.slice().sort((a, b) => a.properties.time - b.properties.time);
+      loadedFromYear = fromYear;
+      loadedToYear = toYear;
+      timelineSlider.value = 1000;
+      timelineDateEl.textContent = lastFeatures.length ? `${toYear}-12-31 (전체)` : '';
     } catch (err) {
       statusEl.textContent = '조회 실패: ' + err.message;
     }
   }
 
+  // 타임라인 재생 — 마지막으로 불러온 features를 시간순으로 하나씩 누적 표시한다.
+  let lastFeatures = [];
+  let loadedFromYear = fromYearInput.value;
+  let loadedToYear = toYearInput.value;
+  let playing = false;
+  let playTimer = null;
+  const TIMELINE_BASE_DURATION_MS = 15000; // 1x 속도로 전체 재생하는 데 걸리는 기준 시간
+
+  function applyTimelineProgress(fraction) {
+    if (!lastFeatures.length) return;
+    const startMs = Date.parse(`${loadedFromYear}-01-01`);
+    const endMs = Date.parse(`${loadedToYear}-12-31`);
+    const cutoff = startMs + fraction * (endMs - startMs);
+    markerLayer.clearLayers();
+    for (const f of lastFeatures) {
+      if (f.properties.time <= cutoff) addMarkerForFeature(f);
+    }
+    const label = fraction >= 1 ? `${loadedToYear}-12-31 (전체)` : new Date(cutoff).toLocaleDateString('ko-KR');
+    timelineDateEl.textContent = label;
+  }
+
+  function stopPlaying() {
+    playing = false;
+    playBtn.textContent = '재생';
+    if (playTimer) {
+      clearInterval(playTimer);
+      playTimer = null;
+    }
+  }
+
+  function startPlaying() {
+    if (!lastFeatures.length) return;
+    if (Number(timelineSlider.value) >= 1000) timelineSlider.value = 0;
+    playing = true;
+    playBtn.textContent = '일시정지';
+    const tickMs = 100;
+    playTimer = setInterval(() => {
+      const speed = Number(speedSelect.value);
+      const stepFraction = (tickMs / TIMELINE_BASE_DURATION_MS) * speed;
+      const fraction = Math.min(1, Number(timelineSlider.value) / 1000 + stepFraction);
+      timelineSlider.value = Math.round(fraction * 1000);
+      applyTimelineProgress(fraction);
+      if (fraction >= 1) stopPlaying();
+    }, tickMs);
+  }
+
+  playBtn.addEventListener('click', () => (playing ? stopPlaying() : startPlaying()));
+  timelineSlider.addEventListener('input', () => {
+    stopPlaying();
+    applyTimelineProgress(Number(timelineSlider.value) / 1000);
+  });
+
   document.getElementById('reload').addEventListener('click', loadQuakes);
-  countrySelect.addEventListener('change', loadQuakes);
 
   copyLinkBtn.addEventListener('click', () => {
     navigator.clipboard
@@ -357,8 +455,8 @@
     if (currentScope() === 'countries') {
       countryPicker.style.display = 'block';
       const wanted = new Set((params.get('countries') || '').split(',').filter(Boolean));
-      for (const opt of countrySelect.options) {
-        if (wanted.has(opt.value)) opt.selected = true;
+      for (const name of wanted) {
+        if (countryCheckboxes[name]) countryCheckboxes[name].checked = true;
       }
     }
 
