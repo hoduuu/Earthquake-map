@@ -294,7 +294,10 @@
     return geojson.features;
   }
 
+  let latestRequestId = 0;
+
   async function loadQuakes() {
+    const requestId = ++latestRequestId;
     const fromYear = fromYearInput.value || '1900';
     const toYear = toYearInput.value || String(new Date().getFullYear());
     const minMag = minMagInput.value || '2.5';
@@ -335,6 +338,8 @@
         scopeLabel = selectedCountries.join(', ');
       }
 
+      if (requestId !== latestRequestId) return; // 더 최신 요청이 이미 시작됨 — 이 응답은 버림
+
       markerLayer.clearLayers();
       for (const f of features) addMarkerForFeature(f);
       statusEl.textContent = `${features.length}건 (USGS, ${scopeLabel}, ${fromYear}~${toYear}년, 규모 ${minMag} 이상)`;
@@ -348,7 +353,7 @@
       timelineSlider.value = 1000;
       timelineDateEl.textContent = lastFeatures.length ? `${toYear}-12-31 (전체)` : '';
     } catch (err) {
-      statusEl.textContent = '조회 실패: ' + err.message;
+      if (requestId === latestRequestId) statusEl.textContent = '조회 실패: ' + err.message;
     }
   }
 
