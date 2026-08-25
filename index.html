@@ -5,13 +5,33 @@
 <title>대한민국 지진 지도 — 과거 전체 이력 (USGS)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
 <style>
-  html, body, #map { height: 100%; margin: 0; font-family: sans-serif; }
+  :root {
+    --bg: #f0f0f0;
+    --panel-bg: #ffffff;
+    --text: #222;
+    --border: rgba(0, 0, 0, 0.15);
+    --accent: #1f77b4;
+    --shadow: rgba(0, 0, 0, 0.3);
+  }
+  :root[data-theme="dark"] {
+    --bg: #121212;
+    --panel-bg: #262626;
+    --text: #e8e8e8;
+    --border: rgba(255, 255, 255, 0.18);
+    --accent: #5aa9ff;
+    --shadow: rgba(0, 0, 0, 0.6);
+    color-scheme: dark;
+  }
+  html, body, #map { height: 100%; margin: 0; font-family: sans-serif; background: var(--bg); }
   .panel {
     position: absolute; top: 10px; left: 50px; z-index: 1000;
-    background: white; padding: 10px 14px; border-radius: 6px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.3); font-size: 14px;
-    max-width: 260px;
+    background: var(--panel-bg); color: var(--text);
+    padding: 10px 14px; border-radius: 6px;
+    box-shadow: 0 1px 4px var(--shadow); font-size: 14px;
+    max-width: 300px;
   }
   .panel label { display: inline-block; margin-right: 8px; }
   .panel input[type="number"] { width: 60px; }
@@ -19,11 +39,33 @@
   .scope-row { margin-top: 6px; }
   #countryPicker { margin-top: 6px; }
   #countrySelect { width: 100%; }
-  #status { margin-top: 6px; color: #555; }
+  #status { margin-top: 6px; color: var(--text); opacity: 0.75; }
+  .spinner {
+    display: inline-block; width: 12px; height: 12px;
+    border: 2px solid var(--border); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin 0.8s linear infinite;
+    vertical-align: middle; margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .chart-panel { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 6px; }
+  .chart-title { font-size: 12px; opacity: 0.75; margin-bottom: 4px; }
+  .chart { display: flex; align-items: flex-end; height: 60px; overflow-x: auto; gap: 1px; }
+  .chart .bar { width: 4px; flex: 0 0 auto; background: var(--accent); min-height: 2px; }
+
+  .legend {
+    position: absolute; bottom: 20px; left: 10px; z-index: 1000;
+    background: var(--panel-bg); color: var(--text);
+    padding: 8px 12px; border-radius: 6px; box-shadow: 0 1px 4px var(--shadow);
+    font-size: 13px;
+  }
+  .legend .row { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+  .legend .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 </style>
 </head>
 <body>
 <div id="map"></div>
+
 <div class="panel">
   <label>시작연도 <input id="fromYear" type="number" value="1900" min="1800" max="2100"></label>
   <label>종료연도 <input id="toYear" type="number" value="2026" min="1800" max="2100"></label>
@@ -39,10 +81,28 @@
     <select id="countrySelect" multiple size="6"></select>
   </div>
 
+  <div class="scope-row">
+    <label><input type="checkbox" id="darkToggle"> 다크 모드</label>
+  </div>
+
   <button id="reload">다시 조회</button>
+  <button id="copyLink">링크 복사</button>
   <div id="status">불러오는 중...</div>
+
+  <div class="chart-panel">
+    <div class="chart-title">연도별 발생 건수</div>
+    <div id="yearChart" class="chart"></div>
+  </div>
 </div>
+
+<div class="legend">
+  <div class="row"><span class="dot" style="background:#1f77b4"></span> 규모 3 미만</div>
+  <div class="row"><span class="dot" style="background:#ff7f0e"></span> 규모 3~5</div>
+  <div class="row"><span class="dot" style="background:#d62728"></span> 규모 5 이상</div>
+</div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script>
   // USGS FDSN Event API — 키 불필요, CORS 지원.
   // 나라별 bounding box는 정확한 국경이 아니라 대략적인 사각형 근사치다 (데모용).
@@ -73,21 +133,36 @@
     '통가': { minlatitude: -24, maxlatitude: -15, minlongitude: -176, maxlongitude: -173 },
   };
 
+  const LIGHT_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+  const DARK_TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+  const TILE_ATTRIBUTION =
+    '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, ' +
+    '&copy; <a href="https://carto.com/attributions">CARTO</a>';
+
   const WORLD_BOUNDS = [[-90, -180], [90, 180]];
   const map = L.map('map', {
     maxBounds: WORLD_BOUNDS,
     maxBoundsViscosity: 1.0,
     minZoom: 2,
   }).setView([36.5, 127.8], 7);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap contributors',
+
+  const tileLayer = L.tileLayer(LIGHT_TILE_URL, {
+    attribution: TILE_ATTRIBUTION,
     noWrap: true,
   }).addTo(map);
 
-  let markerLayer = L.layerGroup().addTo(map);
+  let markerLayer = L.markerClusterGroup();
+  map.addLayer(markerLayer);
+
   const statusEl = document.getElementById('status');
   const countrySelect = document.getElementById('countrySelect');
   const countryPicker = document.getElementById('countryPicker');
+  const fromYearInput = document.getElementById('fromYear');
+  const toYearInput = document.getElementById('toYear');
+  const minMagInput = document.getElementById('minMag');
+  const darkToggle = document.getElementById('darkToggle');
+  const copyLinkBtn = document.getElementById('copyLink');
+  const yearChartEl = document.getElementById('yearChart');
 
   for (const name of Object.keys(COUNTRIES)) {
     const opt = document.createElement('option');
@@ -102,8 +177,53 @@
     return '#1f77b4';
   }
 
+  function quakeIcon(mag) {
+    const color = colorFor(mag);
+    const size = Math.max(8, mag * 5);
+    return L.divIcon({
+      className: '',
+      html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};opacity:0.75;border:1px solid rgba(0,0,0,0.35)"></div>`,
+      iconSize: [size, size],
+    });
+  }
+
   function currentScope() {
     return document.querySelector('input[name="scope"]:checked').value;
+  }
+
+  function applyTheme(dark) {
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    tileLayer.setUrl(dark ? DARK_TILE_URL : LIGHT_TILE_URL);
+    localStorage.setItem('eqmap-theme', dark ? 'dark' : 'light');
+  }
+
+  function renderYearChart(features) {
+    const counts = {};
+    for (const f of features) {
+      const year = new Date(f.properties.time).getFullYear();
+      counts[year] = (counts[year] || 0) + 1;
+    }
+    const years = Object.keys(counts).map(Number).sort((a, b) => a - b);
+    const max = Math.max(1, ...Object.values(counts));
+    yearChartEl.innerHTML = '';
+    for (const year of years) {
+      const bar = document.createElement('div');
+      bar.className = 'bar';
+      bar.style.height = Math.max(2, (counts[year] / max) * 56) + 'px';
+      bar.title = `${year}: ${counts[year]}건`;
+      yearChartEl.appendChild(bar);
+    }
+  }
+
+  function updateUrl(state) {
+    const params = new URLSearchParams();
+    params.set('from', state.fromYear);
+    params.set('to', state.toYear);
+    params.set('mag', state.minMag);
+    params.set('scope', state.scope);
+    if (state.scope === 'countries') params.set('countries', state.countries.join(','));
+    if (darkToggle.checked) params.set('dark', '1');
+    history.replaceState(null, '', '?' + params.toString());
   }
 
   async function fetchBBox(bbox, fromYear, toYear, minMag) {
@@ -127,15 +247,16 @@
   }
 
   async function loadQuakes() {
-    const fromYear = document.getElementById('fromYear').value || '1900';
-    const toYear = document.getElementById('toYear').value || String(new Date().getFullYear());
-    const minMag = document.getElementById('minMag').value || '2.5';
+    const fromYear = fromYearInput.value || '1900';
+    const toYear = toYearInput.value || String(new Date().getFullYear());
+    const minMag = minMagInput.value || '2.5';
     const scope = currentScope();
-    statusEl.textContent = '불러오는 중...';
+    statusEl.innerHTML = '<span class="spinner"></span>불러오는 중...';
 
     try {
       let features = [];
       let scopeLabel;
+      let selectedCountries = [];
 
       if (scope === 'world') {
         features = await fetchBBox(null, fromYear, toYear, minMag);
@@ -144,14 +265,15 @@
         features = await fetchBBox(COUNTRIES['대한민국'], fromYear, toYear, minMag);
         scopeLabel = '한국 인근';
       } else {
-        const selected = Array.from(countrySelect.selectedOptions).map((o) => o.value);
-        if (selected.length === 0) {
+        selectedCountries = Array.from(countrySelect.selectedOptions).map((o) => o.value);
+        if (selectedCountries.length === 0) {
           statusEl.textContent = '나라를 하나 이상 선택하세요.';
           markerLayer.clearLayers();
+          yearChartEl.innerHTML = '';
           return;
         }
         const results = await Promise.all(
-          selected.map((name) => fetchBBox(COUNTRIES[name], fromYear, toYear, minMag))
+          selectedCountries.map((name) => fetchBBox(COUNTRIES[name], fromYear, toYear, minMag))
         );
         const seen = new Set();
         for (const list of results) {
@@ -162,7 +284,7 @@
             }
           }
         }
-        scopeLabel = selected.join(', ');
+        scopeLabel = selectedCountries.join(', ');
       }
 
       markerLayer.clearLayers();
@@ -171,15 +293,13 @@
         const mag = f.properties.mag ?? 0;
         const place = f.properties.place ?? '';
         const time = new Date(f.properties.time).toLocaleString('ko-KR');
-        L.circleMarker([lat, lon], {
-          radius: Math.max(3, mag * 2.5),
-          color: colorFor(mag),
-          fillOpacity: 0.5,
-        })
+        L.marker([lat, lon], { icon: quakeIcon(mag) })
           .bindPopup(`<b>${place}</b><br>규모: ${mag}<br>${time}`)
           .addTo(markerLayer);
       }
       statusEl.textContent = `${features.length}건 (USGS, ${scopeLabel}, ${fromYear}~${toYear}년, 규모 ${minMag} 이상)`;
+      renderYearChart(features);
+      updateUrl({ fromYear, toYear, minMag, scope, countries: selectedCountries });
     } catch (err) {
       statusEl.textContent = '조회 실패: ' + err.message;
     }
@@ -188,12 +308,24 @@
   document.getElementById('reload').addEventListener('click', loadQuakes);
   countrySelect.addEventListener('change', loadQuakes);
 
+  copyLinkBtn.addEventListener('click', () => {
+    navigator.clipboard
+      .writeText(location.href)
+      .then(() => {
+        const original = copyLinkBtn.textContent;
+        copyLinkBtn.textContent = '복사됨!';
+        setTimeout(() => (copyLinkBtn.textContent = original), 1500);
+      })
+      .catch(() => alert('클립보드 복사에 실패했습니다. 주소창의 URL을 직접 복사하세요.'));
+  });
+
+  darkToggle.addEventListener('change', (e) => applyTheme(e.target.checked));
+
   for (const radio of document.querySelectorAll('input[name="scope"]')) {
     radio.addEventListener('change', (e) => {
       const scope = e.target.value;
       countryPicker.style.display = scope === 'countries' ? 'block' : 'none';
 
-      const minMagInput = document.getElementById('minMag');
       // 전 세계 + 오래된 기간 + 낮은 규모를 한꺼번에 조회하면 응답이 너무 커질 수 있어
       // 기본 최소 규모를 올려준다. 사용자가 직접 낮추는 건 자유.
       if (scope === 'world' && Number(minMagInput.value) < 4.5) {
@@ -209,6 +341,34 @@
       if (scope !== 'countries') loadQuakes();
     });
   }
+
+  // URL 쿼리 파라미터로 초기 상태 복원 (링크 공유용)
+  (function restoreFromUrl() {
+    const params = new URLSearchParams(location.search);
+    if (params.has('from')) fromYearInput.value = params.get('from');
+    if (params.has('to')) toYearInput.value = params.get('to');
+    if (params.has('mag')) minMagInput.value = params.get('mag');
+
+    const scope = params.get('scope');
+    if (scope) {
+      const radio = document.querySelector(`input[name="scope"][value="${scope}"]`);
+      if (radio) radio.checked = true;
+    }
+    if (currentScope() === 'countries') {
+      countryPicker.style.display = 'block';
+      const wanted = new Set((params.get('countries') || '').split(',').filter(Boolean));
+      for (const opt of countrySelect.options) {
+        if (wanted.has(opt.value)) opt.selected = true;
+      }
+    }
+
+    const savedTheme = localStorage.getItem('eqmap-theme');
+    const wantDark = params.has('dark') ? params.get('dark') === '1' : savedTheme === 'dark';
+    if (wantDark) {
+      darkToggle.checked = true;
+      applyTheme(true);
+    }
+  })();
 
   loadQuakes();
 </script>
