@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>대한민국 지진 지도 — 과거 전체 이력 (USGS)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  html, body, #map { height: 100%; margin: 0; font-family: sans-serif; }
+  .panel {
+    position: absolute; top: 10px; left: 50px; z-index: 1000;
+    background: white; padding: 10px 14px; border-radius: 6px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3); font-size: 14px;
+  }
+  .panel label { display: inline-block; margin-right: 8px; }
+  .panel input { width: 70px; }
+  .panel button { margin-left: 6px; }
+  #status { margin-top: 6px; color: #555; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div class="panel">
+  <label>시작연도 <input id="fromYear" type="number" value="1900" min="1800" max="2100"></label>
+  <label>최소 규모 <input id="minMag" type="number" value="2.5" step="0.1" min="0" max="9"></label>
+  <button id="reload">다시 조회</button>
+  <div id="status">불러오는 중...</div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  // USGS FDSN Event API — 키 불필요, CORS 지원. 한국 및 주변 해역 bounding box.
+  const BBOX = { minlatitude: 33, maxlatitude: 39, minlongitude: 124, maxlongitude: 132 };
+
+  const map = L.map('map').setView([36.5, 127.8], 7);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  let markerLayer = L.layerGroup().addTo(map);
+  const statusEl = document.getElementById('status');
+
+  function colorFor(mag) {
+    if (mag >= 5) return '#d62728';
+    if (mag >= 3) return '#ff7f0e';
+    return '#1f77b4';
+  }
+
+  async function loadQuakes() {
+    const fromYear = document.getElementById('fromYear').value || '1900';
+    const minMag = document.getElementById('minMag').value || '2.5';
+    statusEl.textContent = '불러오는 중...';
+
+    const url = new URL('https://earthquake.usgs.gov/fdsnws/event/1/query');
+    url.searchParams.set('format', 'geojson');
+    url.searchParams.set('starttime', `${fromYear}-01-01`);
+    url.searchParams.set('minmagnitude', minMag);
+    url.searchParams.set('minlatitude', BBOX.minlatitude);
+    url.searchParams.set('maxlatitude', BBOX.maxlatitude);
+    url.searchParams.set('minlongitude', BBOX.minlongitude);
+    url.searchParams.set('maxlongitude', BBOX.maxlongitude);
+    url.searchParams.set('orderby', 'time');
+
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const geojson = await res.json();
+
+      markerLayer.clearLayers();
+      for (const f of geojson.features) {
+        const [lon, lat] = f.geometry.coordinates;
+        const mag = f.properties.mag ?? 0;
+        const place = f.properties.place ?? '';
+        const time = new Date(f.properties.time).toLocaleString('ko-KR');
+        L.circleMarker([lat, lon], {
+          radius: Math.max(3, mag * 2.5),
+          color: colorFor(mag),
+          fillOpacity: 0.5,
+        })
+          .bindPopup(`<b>${place}</b><br>규모: ${mag}<br>${time}`)
+          .addTo(markerLayer);
+      }
+      statusEl.textContent = `${geojson.features.length}건 (USGS, ${fromYear}년 이후, 규모 ${minMag} 이상)`;
+    } catch (err) {
+      statusEl.textContent = '조회 실패: ' + err.message;
+    }
+  }
+
+  document.getElementById('reload').addEventListener('click', loadQuakes);
+  loadQuakes();
+</script>
+</body>
+</html>
