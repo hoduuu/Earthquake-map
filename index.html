@@ -37,6 +37,19 @@
   .panel input[type="number"] { width: 60px; }
   .panel button { margin-top: 6px; }
   .scope-row { margin-top: 6px; }
+
+  .tabbar { display: flex; gap: 4px; margin-bottom: 8px; }
+  .tab-btn {
+    display: flex; align-items: center; gap: 4px;
+    padding: 4px 8px 6px; border-bottom: 2px solid transparent;
+  }
+  .tab-btn.active { border-bottom-color: var(--accent); font-weight: bold; }
+  .tab-label { cursor: pointer; }
+
+  .global-footer {
+    margin-top: 10px; border-top: 1px solid var(--border); padding-top: 6px;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px;
+  }
   #countryPicker { margin-top: 6px; }
   .country-list {
     max-height: 140px; overflow-y: auto; border: 1px solid var(--border);
@@ -71,57 +84,79 @@
   .legend .row { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
   .legend .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
   .legend .square { width: 10px; height: 10px; display: inline-block; }
+  .legend .line-swatch { width: 16px; height: 0; border-top: 2px solid var(--text); opacity: 0.5; display: inline-block; }
+
+  /* 선택된 나라를 형광펜으로 칠한 듯 부드럽게 강조 */
+  .country-highlight-glow {
+    filter: drop-shadow(0 0 3px rgba(233, 30, 99, 0.9)) drop-shadow(0 0 8px rgba(233, 30, 99, 0.6));
+  }
 </style>
 </head>
 <body>
 <div id="map"></div>
 
 <div class="panel">
-  <label>시작연도 <input id="fromYear" type="number" value="1900" min="1800" max="2100"></label>
-  <label>종료연도 <input id="toYear" type="number" value="2026" min="1800" max="2100"></label>
-  <br>
-  <label>최소 규모 <input id="minMag" type="number" value="2.5" step="0.1" min="0" max="9"></label>
-
-  <div class="scope-row">
-    <label><input type="radio" name="scope" value="kr" checked> 한국 인근</label>
-    <label><input type="radio" name="scope" value="world"> 전 세계</label>
-    <label><input type="radio" name="scope" value="countries"> 나라 선택 (복수 가능)</label>
-  </div>
-  <div id="countryPicker" style="display:none;">
-    <div id="countryList" class="country-list"></div>
-  </div>
-
-  <div class="scope-row">
-    <label><input type="checkbox" id="darkToggle"> 다크 모드</label>
-  </div>
-
-  <div class="scope-row">
-    <label><input type="checkbox" id="quakeLayerToggle" checked> 지진 표시</label>
-    <label><input type="checkbox" id="baseLayerToggle"> 미군기지 표시</label>
-  </div>
-
-  <button id="reload">다시 조회</button>
-  <button id="copyLink">링크 복사</button>
-  <div id="status">불러오는 중...</div>
-
-  <div class="timeline-panel">
-    <div class="chart-title">타임라인 재생</div>
-    <input id="timelineSlider" type="range" min="0" max="1000" value="1000">
-    <div class="timeline-controls">
-      <button id="playBtn">재생</button>
-      <select id="speedSelect">
-        <option value="1">1x</option>
-        <option value="5" selected>5x</option>
-        <option value="20">20x</option>
-        <option value="50">50x</option>
-      </select>
-      <span id="timelineDate"></span>
+  <div class="tabbar">
+    <div class="tab-btn active" data-tab="quake">
+      <input type="checkbox" id="quakeLayerToggle" checked>
+      <span class="tab-label">지진</span>
+    </div>
+    <div class="tab-btn" data-tab="bases">
+      <input type="checkbox" id="baseLayerToggle">
+      <span class="tab-label">미군기지</span>
     </div>
   </div>
 
-  <div class="chart-panel">
-    <div class="chart-title">연도별 발생 건수</div>
-    <div id="yearChart" class="chart"></div>
+  <div class="tab-body" id="tab-quake">
+    <label>시작연도 <input id="fromYear" type="number" value="1900" min="1800" max="2100"></label>
+    <label>종료연도 <input id="toYear" type="number" value="2026" min="1800" max="2100"></label>
+    <br>
+    <label>최소 규모 <input id="minMag" type="number" value="2.5" step="0.1" min="0" max="9"></label>
+
+    <div class="scope-row">
+      <label><input type="radio" name="scope" value="kr" checked> 한국 인근</label>
+      <label><input type="radio" name="scope" value="world"> 전 세계</label>
+      <label><input type="radio" name="scope" value="countries"> 나라 선택 (복수 가능)</label>
+    </div>
+    <div id="countryPicker" style="display:none;">
+      <div id="countryList" class="country-list"></div>
+    </div>
+
+    <button id="reload">다시 조회</button>
+    <div id="status">불러오는 중...</div>
+
+    <div class="timeline-panel">
+      <div class="chart-title">타임라인 재생</div>
+      <input id="timelineSlider" type="range" min="0" max="1000" value="1000">
+      <div class="timeline-controls">
+        <button id="playBtn">재생</button>
+        <select id="speedSelect">
+          <option value="1">1x</option>
+          <option value="5" selected>5x</option>
+          <option value="20">20x</option>
+          <option value="50">50x</option>
+        </select>
+        <span id="timelineDate"></span>
+      </div>
+    </div>
+
+    <div class="chart-panel">
+      <div class="chart-title">연도별 발생 건수</div>
+      <div id="yearChart" class="chart"></div>
+    </div>
+  </div>
+
+  <div class="tab-body" id="tab-bases" hidden>
+    <p style="margin: 4px 0; font-size: 13px;">
+      뉴스에 자주 나오는 주요 대형 해외 미군기지 위치입니다. 공개 정보 기반 참고용 좌표라 정밀하지 않습니다.
+    </p>
+    <div id="baseCount" style="font-size: 13px; opacity: 0.75;"></div>
+  </div>
+
+  <div class="global-footer">
+    <label><input type="checkbox" id="borderToggle" checked> 국경선 표시</label>
+    <label><input type="checkbox" id="darkToggle"> 다크 모드</label>
+    <button id="copyLink">링크 복사</button>
   </div>
 </div>
 
@@ -130,6 +165,7 @@
   <div class="row"><span class="dot" style="background:#ff7f0e"></span> 규모 3~5</div>
   <div class="row"><span class="dot" style="background:#d62728"></span> 규모 5 이상</div>
   <div class="row"><span class="square" style="background:#7b2ff7"></span> 미군기지</div>
+  <div class="row"><span class="line-swatch"></span> 국경선</div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -184,6 +220,8 @@
     '콜롬비아': 'COL', '에콰도르': 'ECU', '파푸아뉴기니': 'PNG', '통가': 'TON',
   };
 
+  const HIGHLIGHT_COLOR = '#e91e63'; // 선택된 나라 강조색 — 라이트/다크 모드 둘 다에서 잘 보이는 마젠타
+
   const LIGHT_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
   const DARK_TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
   const TILE_ATTRIBUTION =
@@ -208,8 +246,9 @@
   const countryOutlineLayer = L.layerGroup().addTo(map);
 
   // 공개적으로 알려진(위키피디아·언론 등) 주요 미군기지 위치. 정밀 좌표가 아닌 참고용.
-  // 지진 레이어와 완전히 독립적으로 켜고 끌 수 있다.
+  // 지진 레이어와 완전히 독립적으로 켜고 끌 수 있다. 나라별 구분 없이 위치만 표시.
   const US_BASES = [
+    // 동아시아·태평양
     { name: '캠프 험프리스 (평택)', lat: 36.9646, lon: 127.0139 },
     { name: '오산 공군기지', lat: 37.0906, lon: 127.0294 },
     { name: '군산 공군기지', lat: 35.9039, lon: 126.6158 },
@@ -224,9 +263,30 @@
     { name: '미사와 공군기지 (일본)', lat: 40.7032, lon: 141.3686 },
     { name: '앤더슨 공군기지 (괌)', lat: 13.5840, lon: 144.9298 },
     { name: '괌 해군기지', lat: 13.4443, lon: 144.6989 },
+    { name: '파인갭 (호주)', lat: -23.7987, lon: 133.7373 },
+    // 유럽
+    { name: '람슈타인 공군기지 (독일)', lat: 49.4369, lon: 7.6003 },
+    { name: '아비아노 공군기지 (이탈리아)', lat: 46.0319, lon: 12.5965 },
+    { name: '시고넬라 해군기지 (이탈리아)', lat: 37.4013, lon: 14.9224 },
+    { name: '나폴리 해군기지 (이탈리아, 6함대사령부)', lat: 40.8419, lon: 14.1875 },
+    { name: 'RAF 레이큰히스 (영국)', lat: 52.4093, lon: 0.5610 },
+    { name: 'RAF 밀든홀 (영국)', lat: 52.3617, lon: 0.4864 },
+    { name: '로타 해군기지 (스페인)', lat: 36.6453, lon: -6.3494 },
+    { name: '툴레 우주기지 (그린란드)', lat: 76.5312, lon: -68.7032 },
+    // 중동·아프리카
+    { name: '인지를릭 공군기지 (튀르키예)', lat: 37.0021, lon: 35.4259 },
+    { name: '알 우데이드 공군기지 (카타르)', lat: 25.1174, lon: 51.3150 },
+    { name: '바레인 해군기지 (5함대사령부)', lat: 26.2114, lon: 50.6090 },
+    { name: '캠프 르모니에 (지부티)', lat: 11.5470, lon: 43.1590 },
+    { name: '디에고가르시아 기지 (인도양)', lat: -7.3130, lon: 72.4111 },
+    // 아메리카
+    { name: '진주만-히컴 합동기지 (하와이)', lat: 21.3469, lon: -157.9397 },
+    { name: '관타나모 해군기지 (쿠바)', lat: 19.9031, lon: -75.1005 },
+    { name: '노퍽 해군기지 (미국, 세계 최대 해군기지)', lat: 36.9468, lon: -76.3287 },
+    { name: '포트 리버티 (미국, 前 포트 브래그)', lat: 35.1391, lon: -79.0060 },
   ];
 
-  const baseLayer = L.layerGroup();
+  const baseLayer = L.markerClusterGroup();
   for (const base of US_BASES) {
     const icon = L.divIcon({
       className: '',
@@ -260,6 +320,20 @@
     if (e.target.checked) map.addLayer(baseLayer);
     else map.removeLayer(baseLayer);
   });
+
+  document.getElementById('baseCount').textContent = `총 ${US_BASES.length}곳`;
+
+  // 탭 전환 — 레이어 표시 체크박스와는 독립적으로, 어느 탭의 설정을 보여줄지만 결정한다.
+  for (const label of document.querySelectorAll('.tab-label')) {
+    label.addEventListener('click', () => {
+      const tabBtn = label.closest('.tab-btn');
+      const tabName = tabBtn.dataset.tab;
+      for (const b of document.querySelectorAll('.tab-btn')) b.classList.toggle('active', b === tabBtn);
+      for (const body of document.querySelectorAll('.tab-body')) body.hidden = body.id !== `tab-${tabName}`;
+    });
+  }
+
+  const borderToggle = document.getElementById('borderToggle');
 
   const countryCheckboxes = {};
   for (const name of Object.keys(COUNTRIES)) {
@@ -312,6 +386,7 @@
     document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
     tileLayer.setUrl(dark ? DARK_TILE_URL : LIGHT_TILE_URL);
     localStorage.setItem('eqmap-theme', dark ? 'dark' : 'light');
+    if (allBordersLayer) allBordersLayer.setStyle({ color: borderBgColor(dark) });
   }
 
   function renderYearChart(features) {
@@ -415,6 +490,28 @@
     }
     return worldBordersPromise;
   }
+
+  // 처음부터 전 세계 국경선을 은은하게 항상 그려두는 배경 레이어.
+  let allBordersLayer = null;
+
+  function borderBgColor(dark) {
+    return dark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)';
+  }
+
+  loadWorldBorders().then((borders) => {
+    if (!borders) return;
+    allBordersLayer = L.geoJSON(Object.values(borders), {
+      style: { color: borderBgColor(darkToggle.checked), weight: 1, fill: false },
+      interactive: false,
+    });
+    if (borderToggle.checked) allBordersLayer.addTo(map);
+  });
+
+  borderToggle.addEventListener('change', (e) => {
+    if (!allBordersLayer) return;
+    if (e.target.checked) map.addLayer(allBordersLayer);
+    else map.removeLayer(allBordersLayer);
+  });
 
   function polygonRings(geometry) {
     return geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates;
@@ -542,7 +639,16 @@
         for (const name of selectedCountries) {
           const feature = borders && ISO3[name] ? borders[ISO3[name]] : null;
           if (feature) {
-            L.geoJSON(feature, { style: { color: '#ffb300', weight: 2, fill: false } }).addTo(countryOutlineLayer);
+            L.geoJSON(feature, {
+              className: 'country-highlight-glow',
+              style: {
+                color: HIGHLIGHT_COLOR,
+                weight: 2,
+                opacity: 0.95,
+                fillColor: HIGHLIGHT_COLOR,
+                fillOpacity: 0.16,
+              },
+            }).addTo(countryOutlineLayer);
           }
         }
       }
