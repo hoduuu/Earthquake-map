@@ -11,10 +11,14 @@
     position: absolute; top: 10px; left: 50px; z-index: 1000;
     background: white; padding: 10px 14px; border-radius: 6px;
     box-shadow: 0 1px 4px rgba(0,0,0,0.3); font-size: 14px;
+    max-width: 260px;
   }
   .panel label { display: inline-block; margin-right: 8px; }
-  .panel input { width: 70px; }
-  .panel button { margin-left: 6px; }
+  .panel input[type="number"] { width: 60px; }
+  .panel button { margin-top: 6px; }
+  .scope-row { margin-top: 6px; }
+  #countryPicker { margin-top: 6px; }
+  #countrySelect { width: 100%; }
   #status { margin-top: 6px; color: #555; }
 </style>
 </head>
@@ -22,15 +26,52 @@
 <div id="map"></div>
 <div class="panel">
   <label>시작연도 <input id="fromYear" type="number" value="1900" min="1800" max="2100"></label>
+  <label>종료연도 <input id="toYear" type="number" value="2026" min="1800" max="2100"></label>
+  <br>
   <label>최소 규모 <input id="minMag" type="number" value="2.5" step="0.1" min="0" max="9"></label>
-  <label><input id="worldwide" type="checkbox"> 전 세계 보기</label>
+
+  <div class="scope-row">
+    <label><input type="radio" name="scope" value="kr" checked> 한국 인근</label>
+    <label><input type="radio" name="scope" value="world"> 전 세계</label>
+    <label><input type="radio" name="scope" value="countries"> 나라 선택 (복수 가능)</label>
+  </div>
+  <div id="countryPicker" style="display:none;">
+    <select id="countrySelect" multiple size="6"></select>
+  </div>
+
   <button id="reload">다시 조회</button>
   <div id="status">불러오는 중...</div>
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-  // USGS FDSN Event API — 키 불필요, CORS 지원. 한국 및 주변 해역 bounding box.
-  const BBOX = { minlatitude: 33, maxlatitude: 39, minlongitude: 124, maxlongitude: 132 };
+  // USGS FDSN Event API — 키 불필요, CORS 지원.
+  // 나라별 bounding box는 정확한 국경이 아니라 대략적인 사각형 근사치다 (데모용).
+  const COUNTRIES = {
+    '대한민국': { minlatitude: 33, maxlatitude: 39, minlongitude: 124, maxlongitude: 130 },
+    '북한': { minlatitude: 37.5, maxlatitude: 43, minlongitude: 124, maxlongitude: 130.7 },
+    '일본': { minlatitude: 24, maxlatitude: 46, minlongitude: 122, maxlongitude: 146 },
+    '중국': { minlatitude: 18, maxlatitude: 53.5, minlongitude: 73, maxlongitude: 135 },
+    '대만': { minlatitude: 21.5, maxlatitude: 25.5, minlongitude: 119.5, maxlongitude: 122.5 },
+    '미국(본토)': { minlatitude: 24.5, maxlatitude: 49.5, minlongitude: -125, maxlongitude: -66.9 },
+    '인도네시아': { minlatitude: -11, maxlatitude: 6, minlongitude: 95, maxlongitude: 141 },
+    '필리핀': { minlatitude: 4.5, maxlatitude: 21.5, minlongitude: 116, maxlongitude: 127 },
+    '칠레': { minlatitude: -56, maxlatitude: -17.5, minlongitude: -76, maxlongitude: -66 },
+    '멕시코': { minlatitude: 14.5, maxlatitude: 32.7, minlongitude: -118.5, maxlongitude: -86.5 },
+    '터키': { minlatitude: 36, maxlatitude: 42.5, minlongitude: 26, maxlongitude: 45 },
+    '이탈리아': { minlatitude: 36.5, maxlatitude: 47.1, minlongitude: 6.6, maxlongitude: 18.6 },
+    '그리스': { minlatitude: 34.8, maxlatitude: 41.8, minlongitude: 19.3, maxlongitude: 29.7 },
+    '이란': { minlatitude: 25, maxlatitude: 39.8, minlongitude: 44, maxlongitude: 63.3 },
+    '인도': { minlatitude: 8, maxlatitude: 35.5, minlongitude: 68, maxlongitude: 97.5 },
+    '네팔': { minlatitude: 26.3, maxlatitude: 30.5, minlongitude: 80, maxlongitude: 88.3 },
+    '뉴질랜드': { minlatitude: -47.5, maxlatitude: -34, minlongitude: 166, maxlongitude: 178.6 },
+    '러시아': { minlatitude: 41, maxlatitude: 82, minlongitude: 19, maxlongitude: 180 },
+    '아이슬란드': { minlatitude: 63, maxlatitude: 66.6, minlongitude: -24.6, maxlongitude: -13 },
+    '페루': { minlatitude: -18.4, maxlatitude: 0, minlongitude: -81.4, maxlongitude: -68.6 },
+    '콜롬비아': { minlatitude: -4.3, maxlatitude: 13, minlongitude: -79.1, maxlongitude: -66.9 },
+    '에콰도르': { minlatitude: -5, maxlatitude: 1.5, minlongitude: -81, maxlongitude: -75 },
+    '파푸아뉴기니': { minlatitude: -11.7, maxlatitude: -1, minlongitude: 141, maxlongitude: 156.1 },
+    '통가': { minlatitude: -24, maxlatitude: -15, minlongitude: -176, maxlongitude: -173 },
+  };
 
   const map = L.map('map').setView([36.5, 127.8], 7);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -39,6 +80,15 @@
 
   let markerLayer = L.layerGroup().addTo(map);
   const statusEl = document.getElementById('status');
+  const countrySelect = document.getElementById('countrySelect');
+  const countryPicker = document.getElementById('countryPicker');
+
+  for (const name of Object.keys(COUNTRIES)) {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    countrySelect.appendChild(opt);
+  }
 
   function colorFor(mag) {
     if (mag >= 5) return '#d62728';
@@ -46,32 +96,71 @@
     return '#1f77b4';
   }
 
-  async function loadQuakes() {
-    const fromYear = document.getElementById('fromYear').value || '1900';
-    const minMag = document.getElementById('minMag').value || '2.5';
-    const worldwide = document.getElementById('worldwide').checked;
-    statusEl.textContent = '불러오는 중...';
+  function currentScope() {
+    return document.querySelector('input[name="scope"]:checked').value;
+  }
 
+  async function fetchBBox(bbox, fromYear, toYear, minMag) {
     const url = new URL('https://earthquake.usgs.gov/fdsnws/event/1/query');
     url.searchParams.set('format', 'geojson');
     url.searchParams.set('starttime', `${fromYear}-01-01`);
+    url.searchParams.set('endtime', `${toYear}-12-31`);
     url.searchParams.set('minmagnitude', minMag);
-    if (!worldwide) {
-      url.searchParams.set('minlatitude', BBOX.minlatitude);
-      url.searchParams.set('maxlatitude', BBOX.maxlatitude);
-      url.searchParams.set('minlongitude', BBOX.minlongitude);
-      url.searchParams.set('maxlongitude', BBOX.maxlongitude);
-    }
     url.searchParams.set('orderby', 'time');
     url.searchParams.set('limit', '20000');
+    if (bbox) {
+      url.searchParams.set('minlatitude', bbox.minlatitude);
+      url.searchParams.set('maxlatitude', bbox.maxlatitude);
+      url.searchParams.set('minlongitude', bbox.minlongitude);
+      url.searchParams.set('maxlongitude', bbox.maxlongitude);
+    }
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const geojson = await res.json();
+    return geojson.features;
+  }
+
+  async function loadQuakes() {
+    const fromYear = document.getElementById('fromYear').value || '1900';
+    const toYear = document.getElementById('toYear').value || String(new Date().getFullYear());
+    const minMag = document.getElementById('minMag').value || '2.5';
+    const scope = currentScope();
+    statusEl.textContent = '불러오는 중...';
 
     try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const geojson = await res.json();
+      let features = [];
+      let scopeLabel;
+
+      if (scope === 'world') {
+        features = await fetchBBox(null, fromYear, toYear, minMag);
+        scopeLabel = '전 세계';
+      } else if (scope === 'kr') {
+        features = await fetchBBox(COUNTRIES['대한민국'], fromYear, toYear, minMag);
+        scopeLabel = '한국 인근';
+      } else {
+        const selected = Array.from(countrySelect.selectedOptions).map((o) => o.value);
+        if (selected.length === 0) {
+          statusEl.textContent = '나라를 하나 이상 선택하세요.';
+          markerLayer.clearLayers();
+          return;
+        }
+        const results = await Promise.all(
+          selected.map((name) => fetchBBox(COUNTRIES[name], fromYear, toYear, minMag))
+        );
+        const seen = new Set();
+        for (const list of results) {
+          for (const f of list) {
+            if (!seen.has(f.id)) {
+              seen.add(f.id);
+              features.push(f);
+            }
+          }
+        }
+        scopeLabel = selected.join(', ');
+      }
 
       markerLayer.clearLayers();
-      for (const f of geojson.features) {
+      for (const f of features) {
         const [lon, lat] = f.geometry.coordinates;
         const mag = f.properties.mag ?? 0;
         const place = f.properties.place ?? '';
@@ -84,24 +173,37 @@
           .bindPopup(`<b>${place}</b><br>규모: ${mag}<br>${time}`)
           .addTo(markerLayer);
       }
-      const scope = worldwide ? '전 세계' : '한국 인근';
-      statusEl.textContent = `${geojson.features.length}건 (USGS, ${scope}, ${fromYear}년 이후, 규모 ${minMag} 이상)`;
+      statusEl.textContent = `${features.length}건 (USGS, ${scopeLabel}, ${fromYear}~${toYear}년, 규모 ${minMag} 이상)`;
     } catch (err) {
       statusEl.textContent = '조회 실패: ' + err.message;
     }
   }
 
   document.getElementById('reload').addEventListener('click', loadQuakes);
-  document.getElementById('worldwide').addEventListener('change', (e) => {
-    const minMagInput = document.getElementById('minMag');
-    // 전 세계 + 오래된 기간 + 낮은 규모를 한꺼번에 조회하면 응답이 너무 커질 수 있어
-    // 기본 최소 규모를 올려준다. 사용자가 직접 낮추는 건 자유.
-    if (e.target.checked && Number(minMagInput.value) < 4.5) {
-      minMagInput.value = '4.5';
-    }
-    map.setView(e.target.checked ? [20, 10] : [36.5, 127.8], e.target.checked ? 2 : 7);
-    loadQuakes();
-  });
+  countrySelect.addEventListener('change', loadQuakes);
+
+  for (const radio of document.querySelectorAll('input[name="scope"]')) {
+    radio.addEventListener('change', (e) => {
+      const scope = e.target.value;
+      countryPicker.style.display = scope === 'countries' ? 'block' : 'none';
+
+      const minMagInput = document.getElementById('minMag');
+      // 전 세계 + 오래된 기간 + 낮은 규모를 한꺼번에 조회하면 응답이 너무 커질 수 있어
+      // 기본 최소 규모를 올려준다. 사용자가 직접 낮추는 건 자유.
+      if (scope === 'world' && Number(minMagInput.value) < 4.5) {
+        minMagInput.value = '4.5';
+      }
+
+      if (scope === 'world') {
+        map.setView([20, 10], 2);
+      } else if (scope === 'kr') {
+        map.setView([36.5, 127.8], 7);
+      }
+
+      if (scope !== 'countries') loadQuakes();
+    });
+  }
+
   loadQuakes();
 </script>
 </body>
