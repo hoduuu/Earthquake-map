@@ -70,6 +70,7 @@
   }
   .legend .row { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
   .legend .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .legend .square { width: 10px; height: 10px; display: inline-block; }
 </style>
 </head>
 <body>
@@ -92,6 +93,11 @@
 
   <div class="scope-row">
     <label><input type="checkbox" id="darkToggle"> 다크 모드</label>
+  </div>
+
+  <div class="scope-row">
+    <label><input type="checkbox" id="quakeLayerToggle" checked> 지진 표시</label>
+    <label><input type="checkbox" id="baseLayerToggle"> 미군기지 표시</label>
   </div>
 
   <button id="reload">다시 조회</button>
@@ -123,6 +129,7 @@
   <div class="row"><span class="dot" style="background:#1f77b4"></span> 규모 3 미만</div>
   <div class="row"><span class="dot" style="background:#ff7f0e"></span> 규모 3~5</div>
   <div class="row"><span class="dot" style="background:#d62728"></span> 규모 5 이상</div>
+  <div class="row"><span class="square" style="background:#7b2ff7"></span> 미군기지</div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -200,6 +207,35 @@
 
   const countryOutlineLayer = L.layerGroup().addTo(map);
 
+  // 공개적으로 알려진(위키피디아·언론 등) 주요 미군기지 위치. 정밀 좌표가 아닌 참고용.
+  // 지진 레이어와 완전히 독립적으로 켜고 끌 수 있다.
+  const US_BASES = [
+    { name: '캠프 험프리스 (평택)', lat: 36.9646, lon: 127.0139 },
+    { name: '오산 공군기지', lat: 37.0906, lon: 127.0294 },
+    { name: '군산 공군기지', lat: 35.9039, lon: 126.6158 },
+    { name: '캠프 케이시 (동두천)', lat: 37.9013, lon: 127.0764 },
+    { name: '캠프 워커 (대구)', lat: 35.8514, lon: 128.6142 },
+    { name: '캠프 캐럴 (칠곡)', lat: 35.9756, lon: 128.4039 },
+    { name: '진해 해군기지', lat: 35.1499, lon: 128.6811 },
+    { name: '요코타 공군기지 (일본)', lat: 35.7485, lon: 139.3486 },
+    { name: '가데나 공군기지 (오키나와)', lat: 26.3556, lon: 127.7683 },
+    { name: '요코스카 해군기지 (일본)', lat: 35.2928, lon: 139.6689 },
+    { name: '캠프 자마 (일본)', lat: 35.5106, lon: 139.3944 },
+    { name: '미사와 공군기지 (일본)', lat: 40.7032, lon: 141.3686 },
+    { name: '앤더슨 공군기지 (괌)', lat: 13.5840, lon: 144.9298 },
+    { name: '괌 해군기지', lat: 13.4443, lon: 144.6989 },
+  ];
+
+  const baseLayer = L.layerGroup();
+  for (const base of US_BASES) {
+    const icon = L.divIcon({
+      className: '',
+      html: '<div style="width:12px;height:12px;background:#7b2ff7;border:1px solid rgba(0,0,0,0.4);transform:rotate(45deg);"></div>',
+      iconSize: [12, 12],
+    });
+    L.marker([base.lat, base.lon], { icon }).bindPopup(`<b>${base.name}</b>`).addTo(baseLayer);
+  }
+
   const statusEl = document.getElementById('status');
   const countryList = document.getElementById('countryList');
   const countryPicker = document.getElementById('countryPicker');
@@ -213,6 +249,17 @@
   const playBtn = document.getElementById('playBtn');
   const speedSelect = document.getElementById('speedSelect');
   const timelineDateEl = document.getElementById('timelineDate');
+  const quakeLayerToggle = document.getElementById('quakeLayerToggle');
+  const baseLayerToggle = document.getElementById('baseLayerToggle');
+
+  quakeLayerToggle.addEventListener('change', (e) => {
+    if (e.target.checked) map.addLayer(markerLayer);
+    else map.removeLayer(markerLayer);
+  });
+  baseLayerToggle.addEventListener('change', (e) => {
+    if (e.target.checked) map.addLayer(baseLayer);
+    else map.removeLayer(baseLayer);
+  });
 
   const countryCheckboxes = {};
   for (const name of Object.keys(COUNTRIES)) {
