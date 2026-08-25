@@ -137,7 +137,9 @@
     '북한': [{ minlatitude: 37.5, maxlatitude: 43, minlongitude: 124, maxlongitude: 130.7 }],
     '일본': [{ minlatitude: 24, maxlatitude: 46, minlongitude: 122, maxlongitude: 146 }],
     '중국': [
-      { minlatitude: 18, maxlatitude: 53.5, minlongitude: 97, maxlongitude: 135 }, // 중·동부
+      { minlatitude: 18, maxlatitude: 39, minlongitude: 97, maxlongitude: 124.3 }, // 남·중부(한반도 이남)
+      { minlatitude: 39, maxlatitude: 43, minlongitude: 97, maxlongitude: 125.3 }, // 베이징 이북~북한 접경
+      { minlatitude: 43, maxlatitude: 53.5, minlongitude: 97, maxlongitude: 135 }, // 헤이룽장 등 최북단(북한 위쪽)
       { minlatitude: 28, maxlatitude: 49, minlongitude: 73, maxlongitude: 97 }, // 티베트·신장(서부)
     ],
     '대만': [{ minlatitude: 21.5, maxlatitude: 25.5, minlongitude: 119.5, maxlongitude: 122.5 }],
@@ -153,13 +155,26 @@
     '인도': [{ minlatitude: 8, maxlatitude: 35.5, minlongitude: 68, maxlongitude: 97.5 }],
     '네팔': [{ minlatitude: 26.3, maxlatitude: 30.5, minlongitude: 80, maxlongitude: 88.3 }],
     '뉴질랜드': [{ minlatitude: -47.5, maxlatitude: -34, minlongitude: 166, maxlongitude: 178.6 }],
-    '러시아': [{ minlatitude: 41, maxlatitude: 82, minlongitude: 19, maxlongitude: 180 }],
+    '러시아': [
+      { minlatitude: 50, maxlatitude: 82, minlongitude: 27, maxlongitude: 70 }, // 유럽 러시아 + 북극권
+      { minlatitude: 41, maxlatitude: 46, minlongitude: 37, maxlongitude: 49 }, // 북캅카스(남부)
+      { minlatitude: 52, maxlatitude: 82, minlongitude: 60, maxlongitude: 180 }, // 시베리아·극동
+    ],
     '아이슬란드': [{ minlatitude: 63, maxlatitude: 66.6, minlongitude: -24.6, maxlongitude: -13 }],
     '페루': [{ minlatitude: -18.4, maxlatitude: 0, minlongitude: -81.4, maxlongitude: -68.6 }],
     '콜롬비아': [{ minlatitude: -4.3, maxlatitude: 13, minlongitude: -79.1, maxlongitude: -66.9 }],
     '에콰도르': [{ minlatitude: -5, maxlatitude: 1.5, minlongitude: -81, maxlongitude: -75 }],
     '파푸아뉴기니': [{ minlatitude: -11.7, maxlatitude: -1, minlongitude: 141, maxlongitude: 156.1 }],
     '통가': [{ minlatitude: -24, maxlatitude: -15, minlongitude: -176, maxlongitude: -173 }],
+  };
+
+  // 나라 이름 -> ISO 3166-1 alpha-3 코드. 실제 국경 도형(GeoJSON)을 찾을 때 쓴다.
+  const ISO3 = {
+    '대한민국': 'KOR', '북한': 'PRK', '일본': 'JPN', '중국': 'CHN', '대만': 'TWN',
+    '미국(본토)': 'USA', '인도네시아': 'IDN', '필리핀': 'PHL', '칠레': 'CHL', '멕시코': 'MEX',
+    '터키': 'TUR', '이탈리아': 'ITA', '그리스': 'GRC', '이란': 'IRN', '인도': 'IND',
+    '네팔': 'NPL', '뉴질랜드': 'NZL', '러시아': 'RUS', '아이슬란드': 'ISL', '페루': 'PER',
+    '콜롬비아': 'COL', '에콰도르': 'ECU', '파푸아뉴기니': 'PNG', '통가': 'TON',
   };
 
   const LIGHT_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
@@ -182,6 +197,8 @@
 
   let markerLayer = L.markerClusterGroup();
   map.addLayer(markerLayer);
+
+  const countryOutlineLayer = L.layerGroup().addTo(map);
 
   const statusEl = document.getElementById('status');
   const countryList = document.getElementById('countryList');
@@ -315,6 +332,101 @@
     return merged;
   }
 
+  // 실제 국경 도형(GeoJSON) — 나라 선택 시 테두리를 그리고, 정확한 조회 범위/필터링에 쓴다.
+  // 못 불러오면 위 COUNTRIES의 사각형 근사치로 조용히 대체된다.
+  const WORLD_BORDERS_URL = 'https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json';
+  let worldBordersPromise = null;
+
+  function loadWorldBorders() {
+    if (!worldBordersPromise) {
+      worldBordersPromise = fetch(WORLD_BORDERS_URL)
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json();
+        })
+        .then((geojson) => {
+          const byIso3 = {};
+          for (const f of geojson.features) {
+            const code = f.id || (f.properties && (f.properties.iso_a3 || f.properties.ISO_A3));
+            if (code) byIso3[code] = f;
+          }
+          return byIso3;
+        })
+        .catch((err) => {
+          console.warn('국경 도형을 불러오지 못해 사각형 근사치로만 동작합니다:', err);
+          return null;
+        });
+    }
+    return worldBordersPromise;
+  }
+
+  function polygonRings(geometry) {
+    return geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates;
+  }
+
+  function pointInRing(lon, lat, ring) {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i];
+      const [xj, yj] = ring[j];
+      const intersect = yi > lat !== yj > lat && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi;
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  function pointInGeometry(lon, lat, geometry) {
+    for (const rings of polygonRings(geometry)) {
+      if (!pointInRing(lon, lat, rings[0])) continue;
+      let inHole = false;
+      for (let h = 1; h < rings.length; h++) {
+        if (pointInRing(lon, lat, rings[h])) {
+          inHole = true;
+          break;
+        }
+      }
+      if (!inHole) return true;
+    }
+    return false;
+  }
+
+  function geometryBBox(geometry) {
+    let minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
+    for (const rings of polygonRings(geometry)) {
+      for (const [lon, lat] of rings[0]) {
+        if (lon < minLon) minLon = lon;
+        if (lon > maxLon) maxLon = lon;
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+      }
+    }
+    return { minlongitude: minLon, maxlongitude: maxLon, minlatitude: minLat, maxlatitude: maxLat };
+  }
+
+  // 국경 도형이 있으면: 그 도형의 bbox로 조회하고, 실제 도형 안에 있는 점만 남긴다.
+  // 날짜변경선을 가로지르는 나라(러시아 등)는 bbox 계산이 깨지므로 손으로 잡아둔
+  // COUNTRIES 사각형들로 조회하되, 도형 안쪽 필터링은 건너뛴다.
+  async function fetchCountryPrecise(name, feature, fromYear, toYear, minMag) {
+    const geometry = feature.geometry;
+    const bbox = geometryBBox(geometry);
+    const spansAntimeridian = bbox.maxlongitude - bbox.minlongitude > 180;
+    const boxesToQuery = spansAntimeridian ? COUNTRIES[name] : [bbox];
+    const results = await Promise.all(boxesToQuery.map((b) => fetchBBox(b, fromYear, toYear, minMag)));
+    const seen = new Set();
+    const merged = [];
+    for (const list of results) {
+      for (const f of list) {
+        if (seen.has(f.id)) continue;
+        const [lon, lat] = f.geometry.coordinates;
+        if (spansAntimeridian || pointInGeometry(lon, lat, geometry)) {
+          seen.add(f.id);
+          merged.push(f);
+        }
+      }
+    }
+    return merged;
+  }
+
   let latestRequestId = 0;
 
   async function loadQuakes() {
@@ -329,6 +441,7 @@
       let features = [];
       let scopeLabel;
       let selectedCountries = [];
+      let borders = null;
 
       if (scope === 'world') {
         features = await fetchBBox(null, fromYear, toYear, minMag);
@@ -341,11 +454,18 @@
         if (selectedCountries.length === 0) {
           statusEl.textContent = '나라를 하나 이상 선택하세요.';
           markerLayer.clearLayers();
+          countryOutlineLayer.clearLayers();
           yearChartEl.innerHTML = '';
           return;
         }
+        borders = await loadWorldBorders();
         const results = await Promise.all(
-          selectedCountries.map((name) => fetchCountry(name, fromYear, toYear, minMag))
+          selectedCountries.map((name) => {
+            const feature = borders && ISO3[name] ? borders[ISO3[name]] : null;
+            return feature
+              ? fetchCountryPrecise(name, feature, fromYear, toYear, minMag)
+              : fetchCountry(name, fromYear, toYear, minMag);
+          })
         );
         const seen = new Set();
         for (const list of results) {
@@ -360,6 +480,16 @@
       }
 
       if (requestId !== latestRequestId) return; // 더 최신 요청이 이미 시작됨 — 이 응답은 버림
+
+      countryOutlineLayer.clearLayers();
+      if (scope === 'countries') {
+        for (const name of selectedCountries) {
+          const feature = borders && ISO3[name] ? borders[ISO3[name]] : null;
+          if (feature) {
+            L.geoJSON(feature, { style: { color: '#ffb300', weight: 2, fill: false } }).addTo(countryOutlineLayer);
+          }
+        }
+      }
 
       markerLayer.clearLayers();
       for (const f of features) addMarkerForFeature(f);
