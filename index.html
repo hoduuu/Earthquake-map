@@ -23,6 +23,7 @@
 <div class="panel">
   <label>시작연도 <input id="fromYear" type="number" value="1900" min="1800" max="2100"></label>
   <label>최소 규모 <input id="minMag" type="number" value="2.5" step="0.1" min="0" max="9"></label>
+  <label><input id="worldwide" type="checkbox"> 전 세계 보기</label>
   <button id="reload">다시 조회</button>
   <div id="status">불러오는 중...</div>
 </div>
@@ -48,17 +49,21 @@
   async function loadQuakes() {
     const fromYear = document.getElementById('fromYear').value || '1900';
     const minMag = document.getElementById('minMag').value || '2.5';
+    const worldwide = document.getElementById('worldwide').checked;
     statusEl.textContent = '불러오는 중...';
 
     const url = new URL('https://earthquake.usgs.gov/fdsnws/event/1/query');
     url.searchParams.set('format', 'geojson');
     url.searchParams.set('starttime', `${fromYear}-01-01`);
     url.searchParams.set('minmagnitude', minMag);
-    url.searchParams.set('minlatitude', BBOX.minlatitude);
-    url.searchParams.set('maxlatitude', BBOX.maxlatitude);
-    url.searchParams.set('minlongitude', BBOX.minlongitude);
-    url.searchParams.set('maxlongitude', BBOX.maxlongitude);
+    if (!worldwide) {
+      url.searchParams.set('minlatitude', BBOX.minlatitude);
+      url.searchParams.set('maxlatitude', BBOX.maxlatitude);
+      url.searchParams.set('minlongitude', BBOX.minlongitude);
+      url.searchParams.set('maxlongitude', BBOX.maxlongitude);
+    }
     url.searchParams.set('orderby', 'time');
+    url.searchParams.set('limit', '20000');
 
     try {
       const res = await fetch(url);
@@ -79,13 +84,24 @@
           .bindPopup(`<b>${place}</b><br>규모: ${mag}<br>${time}`)
           .addTo(markerLayer);
       }
-      statusEl.textContent = `${geojson.features.length}건 (USGS, ${fromYear}년 이후, 규모 ${minMag} 이상)`;
+      const scope = worldwide ? '전 세계' : '한국 인근';
+      statusEl.textContent = `${geojson.features.length}건 (USGS, ${scope}, ${fromYear}년 이후, 규모 ${minMag} 이상)`;
     } catch (err) {
       statusEl.textContent = '조회 실패: ' + err.message;
     }
   }
 
   document.getElementById('reload').addEventListener('click', loadQuakes);
+  document.getElementById('worldwide').addEventListener('change', (e) => {
+    const minMagInput = document.getElementById('minMag');
+    // 전 세계 + 오래된 기간 + 낮은 규모를 한꺼번에 조회하면 응답이 너무 커질 수 있어
+    // 기본 최소 규모를 올려준다. 사용자가 직접 낮추는 건 자유.
+    if (e.target.checked && Number(minMagInput.value) < 4.5) {
+      minMagInput.value = '4.5';
+    }
+    map.setView(e.target.checked ? [20, 10] : [36.5, 127.8], e.target.checked ? 2 : 7);
+    loadQuakes();
+  });
   loadQuakes();
 </script>
 </body>
