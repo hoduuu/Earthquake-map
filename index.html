@@ -26,6 +26,8 @@
     color-scheme: dark;
   }
   html, body, #map { height: 100%; margin: 0; font-family: sans-serif; background: var(--bg); }
+  /* 별도 다크 타일 서버 없이, 기존 지도 타일 색을 반전시켜 다크 모드를 흉내낸다. */
+  :root[data-theme="dark"] .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9); }
   .panel {
     position: absolute; top: 10px; left: 50px; z-index: 1000;
     background: var(--panel-bg); color: var(--text);
@@ -222,11 +224,11 @@
 
   const HIGHLIGHT_COLOR = '#e91e63'; // 선택된 나라 강조색 — 라이트/다크 모드 둘 다에서 잘 보이는 마젠타
 
+  // 다크 모드는 별도 타일 서버 대신 CSS 필터(색 반전)로 흉내낸다 — 위 스타일의
+  // .leaflet-tile-pane 규칙 참고. CARTO 무료 다크 타일이 API 키를 요구하도록
+  // 정책이 바뀌어 외부 의존성을 없앴다.
   const LIGHT_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-  const DARK_TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-  const TILE_ATTRIBUTION =
-    '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, ' +
-    '&copy; <a href="https://carto.com/attributions">CARTO</a>';
+  const TILE_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
   const WORLD_BOUNDS = [[-90, -180], [90, 180]];
   const map = L.map('map', {
@@ -384,7 +386,6 @@
 
   function applyTheme(dark) {
     document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-    tileLayer.setUrl(dark ? DARK_TILE_URL : LIGHT_TILE_URL);
     localStorage.setItem('eqmap-theme', dark ? 'dark' : 'light');
     if (allBordersLayer) allBordersLayer.setStyle({ color: borderBgColor(dark) });
   }
