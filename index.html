@@ -227,8 +227,14 @@
   // 다크 모드는 별도 타일 서버 대신 CSS 필터(색 반전)로 흉내낸다 — 위 스타일의
   // .leaflet-tile-pane 규칙 참고. CARTO 무료 다크 타일이 API 키를 요구하도록
   // 정책이 바뀌어 외부 의존성을 없앴다.
-  const LIGHT_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-  const TILE_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+  //
+  // 타일은 OSM 대신 Esri의 무료 타일 서비스(키 불필요)를 쓴다. OSM의
+  // tile.openstreetmap.org는 file:// 페이지처럼 정상적인 Referer가 없는
+  // 요청을 정책 위반으로 차단하는 경우가 있어 겪었던 문제.
+  const LIGHT_TILE_URL =
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}';
+  const TILE_ATTRIBUTION =
+    'Tiles &copy; Esri — Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom';
 
   const WORLD_BOUNDS = [[-90, -180], [90, 180]];
   const map = L.map('map', {
